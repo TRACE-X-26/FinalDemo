@@ -36,6 +36,7 @@ from diagnostic_platform.workflow import MotorTestSession, TestState, TestStoppe
 from .schemas import (
     CircuitRunPayload,
     BranchSelectionPayload,
+    StationPowerPayload,
     CircuitPowerPayload,
     AutomatedRunPayload,
     MotorCommandPayload,
@@ -157,7 +158,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Adaptive Diagnostic System API",
-    version="0.6.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -623,11 +624,29 @@ def station_status():
     engine=test_engine()
     return {'selected_branch':engine.circuit_power.selected_branch,
             'circuit':engine.circuit_power.snapshot(), 'motor':engine.snapshot(),
-            'hardware_runtime_enabled':engine.hardware_runtime.enabled}
+            'hardware_runtime_enabled':engine.hardware_runtime.enabled,
+            'dashboard_version':'0.9.0', 'reset':engine.station.snapshot()}
 
 @app.post('/api/station/select')
 def station_select(payload: BranchSelectionPayload):
-    try:return test_engine().circuit_power.select(payload.branch)
+    try:return test_engine().station.select(payload.branch)
+    except RunRejected as exc:raise HTTPException(status_code=409,detail=str(exc)) from exc
+
+
+@app.post('/api/station/reset')
+def station_reset():
+    return test_engine().station.reset()
+
+
+@app.post('/api/station/confirm-power')
+def station_confirm_power(payload: StationPowerPayload):
+    try:return test_engine().station.confirm_power(payload.duration_ms,payload.confirmed)
+    except (ValueError,OSError,RuntimeError) as exc:raise HTTPException(status_code=409,detail=str(exc)) from exc
+
+
+@app.post('/api/station/motor/start')
+def station_start_motor(payload: StationPowerPayload):
+    try:return test_engine().station.start_motor(payload.duration_ms)
     except RunRejected as exc:raise HTTPException(status_code=409,detail=str(exc)) from exc
 
 @app.post('/api/station/circuit/power')
@@ -753,4 +772,4 @@ async def automated_stream(socket: WebSocket,run_id: str):
                 automated_engine.stop()
 
 if os.getenv('ADS_SERVE_DASHBOARD', '') == '1':
-    mount_dashboard(app, ROOT / 'frontend' / 'dist')
+    mount_dashboard(app, Path(os.getenv('ADS_DASHBOARD_DIST', str(ROOT / 'frontend' / 'dist'))))

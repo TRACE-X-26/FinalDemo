@@ -24,6 +24,7 @@ class CircuitPowerService:
             return copy.deepcopy(self.current)
 
     def select(self, branch):
+        if self.engine._station_resetting:raise RunRejected('Reset in progress')
         if branch not in ('MOTOR', 'CIRCUIT'):
             raise RunRejected('Select MOTOR or CIRCUIT')
         if not self.engine._mutex.acquire(blocking=False):
@@ -48,6 +49,7 @@ class CircuitPowerService:
 
     def start(self, duration, confirmed):
         from .automated_engine import load_hardware_profile
+        if self.engine._station_resetting:raise RunRejected('Reset in progress')
         self.engine.hardware_runtime.require_permission()
         profile = load_hardware_profile(self.engine.hardware_profile_path, require_motor_protection=False)
         if self.selected_branch != 'CIRCUIT':
@@ -61,6 +63,7 @@ class CircuitPowerService:
         if not self.engine._mutex.acquire(blocking=False):
             raise RunRejected('Another operation owns the hardware; retry when idle')
         try:
+            if self.engine._station_resetting:raise RunRejected('Reset in progress')
             if self.selected_branch != 'CIRCUIT':
                 raise RunRejected('Select Circuit before applying circuit power')
             self._stop.clear()
@@ -131,9 +134,10 @@ class CircuitPowerService:
                 raw = self.engine._read(connection, 'READ_MEASUREMENTS')
                 raw={**raw,'_stm32_timestamp_ms':connection.last_timestamp_ms}
                 branch = normalize_branches(raw)['CIRCUIT']
+                sensor_gating=caps.get('circuit_sensor_gating_enabled',True) is not False
                 if not branch['connected'] or not branch['valid']:
-                    raise RunRejected('Circuit INA219 disconnected or invalid')
-                if ((connection.last_timestamp_ms - branch['timestamp_ms']) & 0xffffffff) > 1500:
+                    if sensor_gating:raise RunRejected('Circuit INA219 disconnected or invalid')
+                if sensor_gating and ((connection.last_timestamp_ms - branch['timestamp_ms']) & 0xffffffff) > 1500:
                     raise RunRejected('Circuit INA219 stale')
                 self._update(measurements=branch)
                 with self.engine.store.connect() as db:

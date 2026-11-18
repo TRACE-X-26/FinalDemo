@@ -139,6 +139,14 @@
 #ifndef ADS_SUPERVISED_TESTING_APPROVED
 #define ADS_SUPERVISED_TESTING_APPROVED 0
 #endif
+/* Versioned branch confirmation / reset workflow. Legacy profiles keep behavior. */
+#ifndef ADS_STATION_CONTROL_ENABLED
+#define ADS_STATION_CONTROL_ENABLED 0
+#endif
+#ifndef ADS_CIRCUIT_SENSOR_GATING_ENABLED
+#define ADS_CIRCUIT_SENSOR_GATING_ENABLED 1
+#endif
+#define ADS_MOTOR_POWER_HOLD_MS 30000U
 /* Protected motor operation. These are limits, not proof of commissioning. */
 #ifndef ADS_ELECTRICAL_LIMITS_ENABLED
 #define ADS_ELECTRICAL_LIMITS_ENABLED 1

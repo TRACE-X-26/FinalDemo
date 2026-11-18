@@ -225,6 +225,8 @@ export type CircuitProbe = {
 
 export type RegisteredTest = { id: string; name: string; available: boolean; unavailable_reason: string; pwm: number | null }
 export type AutomatedRun = {
+  motor_start_requested?: boolean;
+  device_capabilities?: { electrical_limits_enabled?: boolean; hardware_control?: boolean };
   warnings?: string[];
   firmware_acknowledgments?: { command: string; result: Record<string, unknown>; protocol_frame: string }[];
   operating_mode?: string; power_feedback_installed?: boolean; power_feedback_state?: string;

@@ -12,6 +12,16 @@ const NAV: { key: Page; label: string }[] = [
 export default function App() {
   const [page, setPage] = useState<Page>('station')
   const [online, setOnline] = useState(false)
+  const [resetPending, setResetPending] = useState(false)
+  const [resetMessage, setResetMessage] = useState('')
+  async function reset() {
+    setResetPending(true); setResetMessage('Stopping both branches…')
+    try {
+      const result = await api.stationReset()
+      setResetMessage(result.reason)
+    } catch (error) { setResetMessage(`Off not confirmed · ${String(error)}`) }
+    finally { setResetPending(false) }
+  }
 
   useEffect(() => {
     let disposed = false
@@ -32,7 +42,7 @@ export default function App() {
     <aside>
       <div className="brand">
         <div className="brand-mark">A</div>
-        <div><strong>TRACE-X</strong><span>Diagnostic station</span></div>
+        <div><strong>TRACE-X</strong><span>Diagnostic station · v0.9.0</span></div>
       </div>
       <nav aria-label="Main navigation">
         {NAV.map(item => <button key={item.key}
@@ -51,8 +61,10 @@ export default function App() {
       <div className="source-banner" role="status">
         <strong>{page === 'station' ? 'TEST STATION' : 'STM32 SENSORS'}</strong>
         <span>{online ? 'Backend connected' : 'Backend unavailable'}</span>
+        <button className="danger" disabled={resetPending} onClick={reset}>{resetPending ? 'Resetting…' : 'Reset / All Off'}</button>
       </div>
-      {page === 'station' ? <TestStation/> : <LiveSensors/>}
+      {resetMessage && <p role="status">{resetMessage}</p>}
+      {page === 'station' ? <TestStation onPowerRequested={() => setResetMessage('')}/> : <LiveSensors/>}
     </main>
   </div>
 }

@@ -1,4 +1,4 @@
-# TRACE-X FinalDemo
+# TRACE-X FinalDemo — 0.9.0
 
 TRACE-X uses an STM32 Nucleo-F401RE for motor control and measurements, with a
 Python FastAPI backend and React dashboard on a Raspberry Pi 5 or development Mac.
@@ -12,7 +12,12 @@ The dashboard has two navigation items:
 ## Matching firmware and motor behavior
 
 The only active firmware project is **`ADS/`**. Firmware identity:
-**`0.8.0-motor-telemetry`**, using ADS JSON v1 with CRC32 at 115200 baud.
+**`0.9.0-branch-control`**, using ADS JSON v1 with CRC32 at 115200 baud.
+
+Select Motor or Circuit, confirm its power, then use a separate Start Motor Test
+for motor motion. **Reset / All Off** is available on both dashboard pages and
+clears selection while requesting both branches off. Failed communication
+shows **Off not confirmed**. Motor power-ready standby expires after 30 seconds.
 
 The current motor test is **50% PWM, forward, for up to 30 seconds**. Firmware
 and backend do not gate the motor on voltage/current limits, INA219 validity,
@@ -25,7 +30,11 @@ The controller boots stopped. Relay preparation waits 50 ms and does not verify
 that downstream supply voltage is present. These software changes have not been
 verified on physical hardware by the coding agent.
 
-See [motor policy and firmware installation](docs/MOTOR_TELEMETRY_POLICY.md).
+Circuit INA219 readings are also telemetry in 0.9.0; missing sensor readings
+stay invalid rather than preventing explicit branch-power confirmation.
+
+See [0.9.0 workflow, installation and rollback](docs/RELEASE_0.9.0.md).
+The working [v0.8.0 baseline](https://github.com/TRACE-X-26/FinalDemo/tree/v0.8.0) is available on its own branch.
 
 ## Run the dashboard manually
 
@@ -33,7 +42,7 @@ Use Python 3.11 or newer and a Node version compatible with the locked Vite 7
 frontend (Node 22.12+ or a supported newer release).
 
 ```sh
-git clone https://github.com/TRACE-X-26/FinalDemo.git
+git clone --branch release/0.9.0 https://github.com/TRACE-X-26/FinalDemo.git
 cd FinalDemo
 python3 -m venv .venv
 source .venv/bin/activate
@@ -50,6 +59,13 @@ from one process and does not configure browser autostart. Without a configured
 STM32, live hardware readings show disconnected/unavailable. Separate legacy
 simulation services remain in the backend; the current Test Station does not
 substitute simulated values for missing hardware readings.
+
+The repository also includes the prebuilt dashboard. To use it, skip the frontend build and launch from the repository root after installing Python dependencies.
+
+```sh
+ADS_SERVE_DASHBOARD=1 ADS_DASHBOARD_DIST=releases/dashboard-0.9.0-dist \
+  python -m uvicorn api.main:app --host 127.0.0.1 --port 13115
+```
 
 For frontend development, run the backend on port 13115 and `npm run dev` from
 `frontend/`; the Vite proxy forwards API and WebSocket traffic to the backend.

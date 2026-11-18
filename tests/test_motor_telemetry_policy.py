@@ -8,6 +8,20 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
 class MotorTelemetryPolicyTests(unittest.TestCase):
+    def test_actual_gpio_driver_holds_power_without_pwm_then_expires(self):
+        cc=shutil.which('cc')
+        if not cc:self.skipTest('Host C compiler unavailable')
+        with tempfile.TemporaryDirectory() as directory:
+            exe=Path(directory)/'hold'
+            result=subprocess.run([cc,'-std=c11','-Wall','-Wextra','-Werror',
+                '-I',str(ROOT/'tests/hal_stub'),'-I',str(ROOT/'ADS/Core/Inc'),
+                '-DADS_USE_DIRECT_MOTOR_PROFILE=1','-DTEST_STANDBY_HOLD=1',
+                str(ROOT/'ADS/Core/Src/ads_motor.c'),
+                str(ROOT/'ADS/Core/Src/ads_circuit_relay.c'),
+                str(ROOT/'tests/active_low_relays_harness.c'),'-o',str(exe)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            subprocess.run([str(exe)],check=True)
+
     def test_production_sensor_readiness_and_relay_settling_without_calibration(self):
         cc=shutil.which('cc')
         if not cc:self.skipTest('Host C compiler unavailable')

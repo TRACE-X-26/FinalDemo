@@ -1,4 +1,4 @@
-# Canonical TRACE-X protected motor build. Never invokes a programmer.
+# Canonical TRACE-X 0.9 branch-control build. Never invokes a programmer.
 # CubeIDE's managed build remains available; stale ADS/Debug files are not used.
 TOOLCHAIN ?= /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin
 CC := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)arm-none-eabi-gcc

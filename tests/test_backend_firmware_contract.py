@@ -54,6 +54,7 @@ class CTransport:
 
 
 class BackendFirmwareContractTests(unittest.TestCase):
+    station_enabled = False
     @classmethod
     def setUpClass(cls):
         cc = shutil.which('cc')
@@ -62,7 +63,8 @@ class BackendFirmwareContractTests(unittest.TestCase):
         cls.build = tempfile.TemporaryDirectory()
         cls.executable = Path(cls.build.name) / 'firmware'
         subprocess.run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror',
-                        '-DADS_USE_DIRECT_MOTOR_PROFILE=1', '-I', str(ROOT/'ADS/Core/Inc'),
+                        '-DADS_USE_DIRECT_MOTOR_PROFILE=1',
+                        f'-DADS_STATION_CONTROL_ENABLED={int(cls.station_enabled)}', '-I', str(ROOT/'ADS/Core/Inc'),
                         *(str(ROOT/'ADS/Core/Src'/name) for name in
                           ('ads_protocol.c', 'ads_test.c', 'ads_acquisition.c', 'ads_protection.c')),
                         str(ROOT/'tests/backend_firmware_harness.c'), '-o', str(cls.executable)],

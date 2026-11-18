@@ -1,3 +1,13 @@
+# 0.9.0 — 2026-11-18
+
+- Preserved the operator-confirmed 0.8.0 motor baseline and compiled image.
+- Added acknowledged Reset / All Off and explicit branch-power confirmation.
+- Separated motor branch power (PWM 0%) from the existing 50% forward test.
+- Added bounded POWER_READY standby, retaining heartbeat shutdown and branch exclusion.
+- Kept circuit sensor quality visible without gating branch power in the new profile.
+- Retained the two-page dashboard and unchanged ADC probe acquisition.
+- Host/build verification only; physical 0.9.0 acceptance remains to be performed.
+
 # Changelog
 
 All notable project changes should be recorded here. Hardware verification is tracked separately from software implementation.

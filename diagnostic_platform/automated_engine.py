@@ -19,7 +19,7 @@ from .hardware_runtime import HardwareRuntime, RunRejected
 
 TERMINAL={'COMPLETED','FAILED','CANCELLED','EMERGENCY_STOP','DISCONNECTED'}
 TRANSITIONS={
- 'IDLE':{'PRECHECK'},'PRECHECK':{'ARMED'},'ARMED':{'RUNNING'},'RUNNING':{'STOPPING'},
+ 'IDLE':{'PRECHECK'},'PRECHECK':{'ARMED'},'ARMED':{'POWER_READY','RUNNING'},'POWER_READY':{'RUNNING'},'RUNNING':{'STOPPING'},
  'STOPPING':{'ANALYZING'},'ANALYZING':{'PRECHECK','COMPLETED'},
 }
 class InterruptedRun(Exception):pass
@@ -143,12 +143,17 @@ class AutomatedTestEngine:
         self._emergency=threading.Event();self._thread=None;self.current=None
         from .circuit_power import CircuitPowerService
         self.circuit_power=CircuitPowerService(self)
+        self._station_resetting=False
+        self._motor_start=threading.Event()
+        from .station import StationService
+        self.station=StationService(self)
     def recover(self):self.store.recover()
     def available(self,mode):
         if mode not in {'simulation','hardware'}:raise RunRejected('Unknown mode')
         if mode=='simulation':return registry(mode)
         return registry(mode, ready=True)
     def start(self,request):
+        if self._station_resetting:raise RunRejected('Reset in progress')
         mode=request.get('mode','simulation')
         if mode not in {'simulation','hardware'}:raise RunRejected('Unknown mode')
         profile=load_hardware_profile(self.hardware_profile_path) if mode=='hardware' else {
@@ -175,12 +180,14 @@ class AutomatedTestEngine:
                 # The shared owner lock excludes active circuit power. Selection
                 # is UI state, not proof of relay contacts or hardware readiness.
                 self.circuit_power.selected_branch='MOTOR'
-            self._cancel.clear();self._emergency.clear()
+            if self._station_resetting:raise RunRejected('Reset in progress')
+            self._cancel.clear();self._emergency.clear();self._motor_start.clear()
             run=dict(id=str(uuid4()),state='IDLE',mode=mode,source='SIMULATION' if mode=='simulation' else 'stm32_serial',
                 device_id=request.get('device_id','MOTOR-001'),created_at=utcnow(),ended_at=None,
                 configuration={'tests':tests,'duration_ms':duration,'scenario':None if mode=='hardware' else request.get('scenario','healthy'),
                     'operating_mode':profile.get('operating_mode','SIMULATION'),
                     'supervised_confirmed':request.get('supervised_confirmed') is True,
+                    'station_prepare':request.get('station_prepare') is True,
                     'load_id':request.get('load_id','UNKNOWN'),'condition':request.get('condition','UNKNOWN'),
                     'attached_mass_g':request.get('attached_mass_g'),'fixture_notes':request.get('fixture_notes','')},
                 warnings=list(profile.get('warnings',[])),firmware_acknowledgments=[],commissioning=profile,progress=0,active_test=None,steps=[],outcome=None,health_score=None,
@@ -190,6 +197,20 @@ class AutomatedTestEngine:
             self._thread=threading.Thread(target=self._run,args=(run,profile),daemon=True,name='trace-x-test-owner')
             self._thread.start();return copy.deepcopy(run)
         except Exception:self._mutex.release();raise
+    def start_prepared_motor(self,duration_ms):
+        if type(duration_ms) is not int or not 100<=duration_ms<=30000:
+            raise RunRejected('Duration must be 100–30000 ms')
+        with self._data_lock:
+            run=self.current
+            if self._station_resetting or self._cancel.is_set() or not run or run.get('ended_at') or run['state']!='POWER_READY':
+                raise RunRejected('Confirm Motor power first and wait for POWER_READY')
+            if run.get('motor_start_requested'):
+                raise RunRejected('Motor start already requested')
+            run['configuration']['duration_ms']=duration_ms
+            run['motor_start_requested']=True
+            self._motor_start.set()
+            return copy.deepcopy(run_summary(run))
+
     def snapshot(self):
         with self._data_lock:return copy.deepcopy(run_summary(self.current))
     def stop(self,emergency=False):
@@ -214,7 +235,7 @@ class AutomatedTestEngine:
     def _check_cancel(self):
         if self._cancel.is_set():raise InterruptedRun('Emergency stop' if self._emergency.is_set() else 'Operator cancelled')
     def read_sensors(self,port,connection_factory=None):
-        if not self._mutex.acquire(blocking=False):return None
+        if self._station_resetting or not self._mutex.acquire(blocking=False):return None
         connection=None
         try:
             connection=(connection_factory() if connection_factory else
@@ -393,6 +414,8 @@ class AutomatedTestEngine:
                 if caps.get('integrity')!='CRC32':raise RunRejected('CRC32-capable firmware required')
                 if run['mode']=='hardware':
                     self.hardware_runtime.validate_motor_protections(caps)
+                    if caps.get('station_control') is True and not run['configuration'].get('station_prepare'):
+                        raise RunRejected('Use Test Station branch confirmation before starting the motor')
                     run['warnings']+=self.hardware_runtime.motor_contract_warnings(profile,caps)
                 if status.get('applied_pwm_percent')!=0:raise RunRejected('Output not initially disabled')
                 connection.seed_sequence(status.get('last_control_seq',0))
@@ -410,7 +433,7 @@ class AutomatedTestEngine:
                     arm_args={'supervised_confirmed':True} if run['configuration']['supervised_confirmed'] else None
                     self._command(connection,'ARM_TEST',arm_args)
                     if run['mode']=='hardware':
-                        power=self._command(connection,'PREPARE_TEST_POWER')
+                        power=self._command(connection,'PREPARE_TEST_POWER',arm_args)
                         if power.get('state')!='POWER_CHECK' or power.get('applied_pwm_percent')!=0 or power.get('motor_relay_requested_on') is not True or type(power.get('power_started_ms')) is not int:
                             raise RunRejected('Power-check acknowledgment did not confirm relay request and zero PWM')
                         self.store.event(run['id'],{'event':'POWER_CHECK','power_started_ms':power['power_started_ms'],'applied_pwm_percent':0})
@@ -425,6 +448,22 @@ class AutomatedTestEngine:
                                 if str(exc)!='Power-check acquisition pending':raise
                             if time.monotonic()>=power_deadline:raise RunRejected('Power-check timeout; motor PWM never authorized')
                             self._cancel.wait(.05)
+                    if run['configuration'].get('station_prepare'):
+                        if caps.get('station_control') is not True or caps.get('motor_power_hold_ms')!=30000:
+                            raise RunRejected('Install firmware 0.9.0 with separate motor power/start control')
+                        self._transition(run,'POWER_READY')
+                        self._save(run)
+                        hold_deadline=time.monotonic()+30
+                        while not self._motor_start.is_set():
+                            self._check_cancel()
+                            connection.heartbeat()
+                            standby=self._measure(connection,run,procedure,step,None)
+                            if standby.get('state')!='POWER_READY' or standby.get('applied_pwm_percent')!=0 or standby.get('motor_relay_requested_on') is not True:
+                                raise RunRejected('Motor power-ready state lost: '+str(standby.get('stop_reason')))
+                            if time.monotonic()>=hold_deadline:
+                                raise RunRejected('Motor power confirmation expired; confirm again')
+                            self._cancel.wait(.1)
+                        self._check_cancel()
                     self._command(connection,'SET_PWM',{'pwm_percent':procedure.pwm})
                     response=self._command(connection,'START_TEST',dict(pwm_percent=procedure.pwm,duration_ms=run['configuration']['duration_ms'],direction='FORWARD'))
                     if (response.get('state')!='RUNNING' or response.get('applied_pwm_percent')!=procedure.pwm or

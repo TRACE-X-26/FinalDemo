@@ -52,7 +52,25 @@ int main(void)
   assert(ADS_CIRCUIT_RELAY_ACTIVE_LEVEL==0 && ADS_CIRCUIT_RELAY_INACTIVE_LEVEL==1);
   ADS_Motor_Init();ADS_CircuitRelay_Init();
   assert(motor_level==1 && circuit_level==1 && !TIM2->CCR3);
-#if defined(TEST_PREPOWER)
+#if defined(TEST_STANDBY_HOLD)
+  assert(ADS_STATION_CONTROL_ENABLED);
+  fake_power_sample=0;
+  assert(ADS_Motor_Rearm() && ADS_Motor_PreparePower());
+  tick=49;ADS_Motor_Poll(tick);assert(ADS_Motor_PowerState()==1);
+  fake_power_sample=1;tick=50;ADS_Motor_Poll(tick);
+  for(tick=1000;tick<30000;tick+=1000) {
+    ADS_Motor_Heartbeat(tick);
+    assert(ADS_Motor_PowerState()==2 && motor_level==0 && circuit_level==1);
+    assert(TIM2->CCR3==0 && !(TIM2->CCER&TIM_CCER_CC3E));
+  }
+  ADS_Motor_Poll(tick);assert(motor_level==1 && ADS_Motor_IsLatched());
+  assert(ADS_Motor_Rearm() && ADS_Motor_PreparePower());
+  tick+=50;ADS_Motor_Poll(tick);
+  assert(fixture_start(50,500));assert(TIM2->CCR3==500);
+  tick+=500;ADS_Motor_Poll(tick);
+  assert(motor_level==1 && circuit_level==1 && TIM2->CCR3==0);
+  return 0;
+#elif defined(TEST_PREPOWER)
   fake_power_sample=0;
   assert(!ADS_Motor_PreparePower());
   assert(ADS_Motor_Rearm() && ADS_Motor_PreparePower());

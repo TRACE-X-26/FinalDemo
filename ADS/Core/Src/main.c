@@ -79,9 +79,14 @@ static int ADS_CircuitReady(void *context)
 {
   (void)context; ADS_ElectricalBranch branches[2];
   if(motor_test.running || motor_test.armed) return 0;
+#if ADS_CIRCUIT_SENSOR_GATING_ENABLED
   ADS_Sensors_Branches(branches,NULL);
   return branches[1].connected && branches[1].configured &&
     branches[1].samples[0].valid && branches[1].samples[1].valid;
+#else
+  (void)branches;
+  return 1; /* Acquisition continues independently; missing readings stay invalid. */
+#endif
 }
 static int ADS_StartCircuit(uint32_t unused,uint32_t duration,void *context)
 {
@@ -241,6 +246,8 @@ int main(void)
   ADS_Sensors_Init();
   ADS_Test_Init(&motor_test, ADS_BENCH_PWM_PERCENT, ADS_BENCH_MAX_DURATION_MS,
                 ADS_Motor_OutputEnabled(), ADS_TestReady, ADS_TestStart, ADS_StopMotor, NULL);
+  motor_test.confirmation_required=ADS_STATION_CONTROL_ENABLED;
+  motor_test.power_hold_ms=ADS_STATION_CONTROL_ENABLED ? ADS_MOTOR_POWER_HOLD_MS : 0;
   motor_test.power_required=1;motor_test.prepare_power=ADS_TestPreparePower;motor_test.power_state=ADS_TestPowerState;
   motor_test.disabled_reason=ADS_Motor_BlockReason();
   motor_test.supervised_required=ADS_MOTOR_OPERATING_MODE==ADS_MODE_SUPERVISED_TEST;

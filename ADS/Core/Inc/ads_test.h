@@ -15,7 +15,8 @@ typedef struct {
   uint8_t supervised_required, operator_confirmation, supervised_confirmed;
   uint8_t power_feedback_installed, power_feedback_verified;
   ADS_TestReadyFn feedback;
-  uint8_t power_required, power_requested;
+  uint8_t power_required, power_requested, confirmation_required;
+  uint32_t power_hold_ms;
   ADS_TestReadyFn prepare_power, power_state;
   ADS_TestReadyFn ready, arm;
   ADS_TestStartFn start;
