@@ -35,6 +35,9 @@ void ADS_Test_Poll(ADS_Test *t, uint32_t now)
     shutdown(t, now, "COMPLETED", 0);
   else if ((t->running || t->armed) && (!t->ready || !t->ready(t->context)))
     shutdown(t, now, "INTERLOCK_OR_SENSOR_FAULT", 1);
+  if(t->armed && t->power_requested && t->power_hold_ms &&
+      (uint32_t)(now-t->power_started_ms)>=t->power_hold_ms)
+    shutdown(t,now,"POWER_READY_TIMEOUT",1);
   if(t->armed && t->power_requested) {
     int state=t->power_state?t->power_state(t->context):0;
     if(state==2) t->state="POWER_READY";
@@ -85,6 +88,7 @@ int ADS_Test_Command(ADS_Test *t, const char *command, uint32_t seq, uint32_t pw
     return 1;
   }
   if (!strcmp(command,"PREPARE_TEST_POWER")) {
+    if(t->confirmation_required && !confirmation) { *reason="BRANCH_CONFIRMATION_REQUIRED";return 0; }
     if(!t->power_required || !t->armed || t->running || t->locked || t->power_requested) { *reason="ARM_REQUIRED_OR_POWER_CHECK_ACTIVE";return 0; }
     if(!t->prepare_power || !t->prepare_power(t->context)) {
       shutdown(t,now,"POWER_CHECK_START_FAILED",1);*reason="POWER_CHECK_START_FAILED";return 0;

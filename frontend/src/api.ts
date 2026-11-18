@@ -16,6 +16,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   stationStatus: () => request<StationStatus>('/api/station/status'),
+  stationReset: () => request<{ off_confirmed: boolean; reason: string }>('/api/station/reset', { method: 'POST' }),
+  stationConfirmPower: (duration_ms: number, confirmed: boolean) => request('/api/station/confirm-power', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_ms, confirmed }) }),
+  stationStartMotor: (duration_ms: number) => request<AutomatedRun>('/api/station/motor/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_ms }) }),
   selectBranch: (branch: 'MOTOR' | 'CIRCUIT') => request('/api/station/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ branch }) }),
   circuitPower: (on: boolean, duration_ms = 30000, supervised_confirmed = false) => request('/api/station/circuit/power', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on, duration_ms, supervised_confirmed }) }),
   captureSimulatedCircuit: (id: string, index: number) => request<CircuitReport>(`/api/circuits/simulated-runs/${id}/capture?index=${index}`, { method: 'POST' }),

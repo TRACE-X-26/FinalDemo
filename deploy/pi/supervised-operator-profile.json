@@ -2,7 +2,7 @@
   "device_id": "STM32-ADS",
   "asset_id": "MOTOR-001",
   "serial_identity": "",
-  "firmware_version": "0.8.0-motor-telemetry",
+  "firmware_version": "0.9.0-branch-control",
   "fixture_id": "TRACE-X-prototype-operator-confirmed",
   "evidence_id": "operator-confirmation-2026-11-11",
   "calibration_id": "operator-reported-electrical-check-2026-11-11",
@@ -73,5 +73,7 @@
     "max_current": 1.5
   },
   "power_check_mode": "RELAY_SETTLE_ONLY",
-  "motor_sensor_gating_enabled": false
+  "motor_sensor_gating_enabled": false,
+  "station_control": true,
+  "circuit_sensor_gating_enabled": false
 }

@@ -82,7 +82,7 @@ void ADS_Motor_Poll(uint32_t now_ms)
 {
   if(power_state==1 || power_state==2) {
     int state=ADS_Motor_PowerSampleState(power_started_ms);
-    if(!ADS_Motor_OperationReady() || state<0 || (uint32_t)(now_ms-power_started_ms)>=ADS_POWER_CHECK_TIMEOUT_MS) ADS_Motor_Fault();
+    if(!ADS_Motor_OperationReady() || state<0 || (uint32_t)(now_ms-power_started_ms)>=(ADS_STATION_CONTROL_ENABLED && power_state==2 ? ADS_MOTOR_POWER_HOLD_MS : ADS_POWER_CHECK_TIMEOUT_MS)) ADS_Motor_Fault();
     else if(state==1) power_state=2;
   }
   if (run_deadline_active && (!ADS_Motor_OperationReady() || !ADS_Motor_ProtectionReady())) ADS_Motor_Fault();

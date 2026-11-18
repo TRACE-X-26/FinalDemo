@@ -8,7 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static ADS_Test motor;
+static ADS_Test motor,circuit;
+static unsigned circuit_powered;
 static ADS_Acquisition samples;
 static unsigned powered;
 static uint32_t powered_ms;
@@ -23,14 +24,19 @@ static uint32_t tick(void *ctx)
 }
 static int transmit(const uint8_t *data,size_t size,void *ctx)
 { (void)ctx; return fwrite(data,1,size,stdout)==size?0:-1; }
-static int ready(void *ctx) { (void)ctx; return 1; }
-static void stop(void *ctx) { (void)ctx; powered=0; }
+static int ready(void *ctx) { (void)ctx; return !circuit.armed && !circuit.running; }
+static int circuit_ready(void *ctx) { (void)ctx; return !motor.armed && !motor.running; }
+static void circuit_stop(void *ctx) { (void)ctx;circuit_powered=0; }
+static int circuit_start(uint32_t pwm,uint32_t duration,void *ctx)
+{ (void)ctx; (void)pwm; (void)duration;circuit_powered=1;return 1; }
+static void stop(void *ctx) { (void)ctx; powered=0; circuit_powered=0; if(circuit.stop) ADS_Test_Fault(&circuit,tick(NULL),"OUTPUTS_STOPPED"); }
 static int prepare(void *ctx)
 { (void)ctx; powered=1; powered_ms=tick(NULL); return 1; }
 static int power_state(void *ctx)
 {
   (void)ctx; uint32_t age=tick(NULL)-powered_ms;
-  if(age>=ADS_POWER_CHECK_TIMEOUT_MS) return 0;
+  uint32_t limit=ADS_STATION_CONTROL_ENABLED && !strcmp(motor.state,"POWER_READY") ? ADS_MOTOR_POWER_HOLD_MS : ADS_POWER_CHECK_TIMEOUT_MS;
+  if(age>=limit) return 0;
   ADS_Sample out[5]; ADS_Acquisition_Snapshot(&samples,out,tick(NULL));
   int state=ADS_Protection_DownstreamSample(out,samples.info.electrical_started_ms,powered_ms,tick(NULL));
   return state<0?0:state==1?2:1;
@@ -62,6 +68,10 @@ int main(int argc,char **argv)
   ADS_Acquisition_Init(&samples);
   ADS_Test_Init(&motor,ADS_BENCH_PWM_PERCENT,ADS_BENCH_MAX_DURATION_MS,
                 ADS_BOARD_ACCEPTED,ready,start,stop,NULL);
+  motor.confirmation_required=ADS_STATION_CONTROL_ENABLED;
+  motor.power_hold_ms=ADS_STATION_CONTROL_ENABLED?ADS_MOTOR_POWER_HOLD_MS:0;
+  ADS_Test_Init(&circuit,100,30000,1,circuit_ready,circuit_start,circuit_stop,NULL);
+  circuit.supervised_required=1;
   motor.power_required=1; motor.prepare_power=prepare; motor.power_state=power_state;
   motor.supervised_required=ADS_MOTOR_OPERATING_MODE==ADS_MODE_SUPERVISED_TEST;
   motor.power_feedback_installed=ADS_POWER_FEEDBACK_INSTALLED;
@@ -70,6 +80,7 @@ int main(int argc,char **argv)
   ADS_Protocol_SetHardwareCallbacks(&protocol,acquire,stop);
   ADS_Protocol_SetMeasurementInfo(&protocol,info);
   ADS_Protocol_SetMotorTest(&protocol,&motor);
+  ADS_Protocol_SetCircuitTest(&protocol,&circuit);
   char frame[1024];
   while(fgets(frame,sizeof(frame),stdin)) {
     /* Out-of-band fixture clock; these lines are never protocol commands. */

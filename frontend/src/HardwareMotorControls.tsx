@@ -17,7 +17,7 @@ export default function HardwareMotorControls() {
   const [status, setStatus] = useState<HardwareStatus | null>(null)
   const [run, setRun] = useState<AutomatedRun | null>(null)
   const pwm = 50
-  const [duration, setDuration] = useState(30)
+  const [duration, setDuration] = useState(5)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const socketRef = useRef<WebSocket | null>(null)
@@ -60,8 +60,7 @@ export default function HardwareMotorControls() {
   async function start() {
     setPending(true); setError('')
     try {
-      const next = await api.startAutomated({ mode: 'hardware', device_id: status?.asset_id,
-        tests: [`pwm_${pwm}`], duration_ms: Math.round(duration * 1000) })
+      const next = await api.stationStartMotor(Math.round(duration * 1000))
       setRun(next)
     } catch (err) { setError(String(err)) }
     finally { setPending(false) }
@@ -72,19 +71,21 @@ export default function HardwareMotorControls() {
     catch (err) { setError(String(err)) }
   }
   const sample = run?.latest_measurement
-  const electricalPolicy = status?.preflight.stale ? undefined : status?.preflight.capabilities?.electrical_limits_enabled
+  const electricalPolicy = active ? run?.device_capabilities?.electrical_limits_enabled : status?.preflight.stale ? undefined : status?.preflight.capabilities?.electrical_limits_enabled
+  const firmwareControl = active ? run?.device_capabilities?.hardware_control : status?.firmware_hardware_control
   return <section className="panel motor-controls">
-    <div className="panel-title"><div><h2>STM32 motor test</h2><p>Relay preparation at zero PWM before motor start</p></div><span className="mode-chip">HARDWARE</span></div>
+    <div className="panel-title"><div><h2>STM32 motor test</h2><p>Confirm Motor power above, then start the 50% test</p></div><span className="mode-chip">HARDWARE</span></div>
     <p>Start sends a motor-test request. Stop, heartbeat shutdown, duration limits and branch exclusion remain active.</p>
     <p>Voltage/current checks reported by STM32: <strong>{electricalPolicy === false ? 'OFF — sensor readings only' : electricalPolicy === true ? 'ON' : 'not checked'}</strong>. Pi configuration: {status?.electrical_limits_enabled === false ? 'readings only' : status?.electrical_limits_enabled === true ? 'electrical checks enabled' : 'unknown'}.</p>
-    <p>Circuit runtime opt-in: {status?.hardware_control_enabled ? 'explicitly enabled' : 'disabled'} · STM32 output permission: {status?.firmware_hardware_control == null ? 'not checked' : status.firmware_hardware_control ? 'reported enabled' : 'reported disabled'}</p>
+    <p>Circuit runtime opt-in: {status?.hardware_control_enabled ? 'explicitly enabled' : 'disabled'} · STM32 output permission: {firmwareControl == null ? 'not checked' : firmwareControl ? 'reported enabled' : 'reported disabled'}</p>
     <p role="status">{status?.preflight.reason ?? 'No STM32 snapshot yet; Start Test remains available.'}</p>
     {status?.warnings?.map((warning, i) => <p role="status" key={i}>Warning: {warning}</p>)}
     <button className="secondary" disabled={active || pending} onClick={preflight}>Check hardware · no motor commands</button>
+    {run?.state === 'POWER_READY' && <p role="status">Motor branch power acknowledged. PWM is 0%. Start within 30 seconds or power will turn off.</p>}
     <div className="control-bar">
       <label>PWM<select value={pwm} disabled aria-label="PWM — fixed by firmware"><option value={pwm}>{pwm}% · fixed by firmware</option></select></label>
-      <label>Duration (seconds)<input type="number" min="0.1" max={30} step="0.1" value={duration} disabled={active || pending} onChange={e => setDuration(Number(e.target.value))}/></label>
-      <button className="primary" disabled={active || pending || !Number.isFinite(duration) || duration < 0.1 || duration > 30} onClick={start}>Start Test</button>
+      <label>Duration (seconds)<input type="number" min="0.1" max={30} step="0.1" value={duration} disabled={(active && run?.state !== 'POWER_READY') || pending} onChange={e => setDuration(Number(e.target.value))}/></label>
+      <button className="primary" disabled={run?.state !== 'POWER_READY' || run?.motor_start_requested === true || pending || !Number.isFinite(duration) || duration < 0.1 || duration > 30} onClick={start}>Start Motor Test</button>
       <button className="secondary" disabled={!active} onClick={() => stop()}>Stop Test</button>
       <button className="estop" disabled={!active} onClick={() => stop(true)}>EMERGENCY STOP</button>
     </div>
@@ -100,10 +101,10 @@ export default function HardwareMotorControls() {
     <p>{run ? `${run.state} · ${(run.elapsed_seconds ?? 0).toFixed(1)} s · ${run.stop_confirmed ? 'STM32 zero-output acknowledged' : 'Stopped state not confirmed'}` : 'No hardware run selected. No simulated values are shown here.'}</p>
     {run?.warnings?.map((warning, i) => <p role="status" key={i}>Warning: {warning}</p>)}
     {run?.latest_measurement?.quality?.length ? <p role="status">Telemetry quality: {run.latest_measurement.quality.join(', ')}</p> : null}
-    {run?.firmware_acknowledgments?.length ? <details open><summary>Actual STM32 acknowledgments</summary>{run.firmware_acknowledgments.map((ack, i) => <pre key={i}>{ack.command}: {JSON.stringify(ack.result)}</pre>)}</details> : null}
+    {run?.firmware_acknowledgments?.length ? <details><summary>Actual STM32 acknowledgments</summary>{run.firmware_acknowledgments.map((ack, i) => <pre key={i}>{ack.command}: {JSON.stringify(ack.result)}</pre>)}</details> : null}
     {run?.faults?.length ? <p role="alert">Faults: {run.faults.join(', ')}</p> : null}
     {(error || run?.reason) && <p role="alert">{error || run?.reason}</p>}
     {run && <a className="secondary" href={`/api/automated/runs/${run.id}/csv`}>Download motor CSV</a>}
-    <p>Applied PWM is the STM32 output setting, not a measured waveform. Encoder scaling assumes 374 A-channel rising edges per output revolution. Leaving this page cancels an active hardware test.</p>
+    <p>Applied PWM is the STM32 output setting, not a measured waveform. Encoder scaling assumes 374 A-channel rising edges per output revolution. Use Reset / All Off to stop both branches and clear the selection.</p>
   </section>
 }

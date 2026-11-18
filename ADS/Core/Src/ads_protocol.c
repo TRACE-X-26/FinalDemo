@@ -8,7 +8,9 @@
 #include <string.h>
 
 #define ADS_DEVICE_ID "STM32-ADS"
-#if ADS_ELECTRICAL_LIMITS_ENABLED
+#if ADS_STATION_CONTROL_ENABLED
+#define ADS_FIRMWARE_VERSION "0.9.0-branch-control"
+#elif ADS_ELECTRICAL_LIMITS_ENABLED
 #define ADS_FIRMWARE_VERSION "0.7.0-downstream-protected"
 #else
 #define ADS_FIRMWARE_VERSION "0.8.0-motor-telemetry"
@@ -275,8 +277,8 @@ static void ADS_Protocol_SendCapabilities(ADS_Protocol *protocol,
       "{\"version\":1,\"type\":\"capabilities\",\"seq\":%lu,\"device_id\":\"STM32-ADS\",\"timestamp_ms\":%lu,"
       "\"payload\":{\"reply_to\":%lu,\"result\":{\"device_id\":\"STM32-ADS\",\"firmware_version\":\"%s\","
       "\"measurement_types\":[\"voltage\",\"current\",\"power\",\"temperature\",\"rpm\"],"
-      "\"commands\":[\"GET_STATUS\",\"GET_CAPABILITIES\",\"GET_FAULTS\",\"READ_MEASUREMENTS\",\"ARM_TEST\",\"PREPARE_TEST_POWER\",\"START_TEST\",\"SET_PWM\",\"STOP_TEST\",\"STOP_MOTOR\",\"EMERGENCY_STOP\",\"CLEAR_FAULTS\",\"GET_DEVICE_INFO\",\"GET_SENSOR_DATA\",\"GET_CIRCUIT_STATUS\",\"ARM_CIRCUIT\",\"START_CIRCUIT\",\"STOP_CIRCUIT\"],"
-      "\"ina219_addresses\":{\"MOTOR\":64,\"CIRCUIT\":65},\"integrity\":\"%s\",\"hardware_control\":%s,\"fixed_pwm_percent\":%lu,\"max_duration_ms\":%lu,\"fixed_direction\":\"FORWARD\",\"heartbeat_timeout_ms\":2000,\"temperature_enabled\":%s,\"hardware_block_reason\":\"%s\",\"encoder_calibration\":\"PROVISIONAL_UNTIL_BENCH_VERIFIED\",\"operating_mode\":\"%s\",\"power_feedback_installed\":%s,\"power_feedback_state\":\"%s\",\"electrical_limits_enabled\":%s,\"motor_sensor_gating_enabled\":%s,\"power_check_mode\":\"%s\",\"protection_limits_verified\":%s,\"supply_sensing\":\"%s\",\"supply_sensing_verified\":%s,\"power_check_required\":true,\"power_check_timeout_ms\":1500,\"power_check_settle_ms\":50,\"min_voltage_mv\":%lu,\"max_voltage_mv\":%lu,\"max_current_ma\":%lu,\"circuit_power_control\":%s,\"circuit_max_duration_ms\":30000,\"circuit_relay\":\"D5/PB4/IN2\",\"motor_relay_active_level\":%d,\"circuit_relay_active_level\":%d}}}\n",
+      "\"commands\":[\"GET_STATUS\",\"GET_CAPABILITIES\",\"GET_FAULTS\",\"READ_MEASUREMENTS\",\"ARM_TEST\",\"PREPARE_TEST_POWER\",\"START_TEST\",\"SET_PWM\",\"STOP_TEST\",\"STOP_MOTOR\",\"EMERGENCY_STOP\",\"CLEAR_FAULTS\",\"GET_DEVICE_INFO\",\"GET_SENSOR_DATA\",\"RESET_ALL\",\"GET_STATION_STATUS\",\"GET_CIRCUIT_STATUS\",\"ARM_CIRCUIT\",\"START_CIRCUIT\",\"STOP_CIRCUIT\"],"
+      "\"ina219_addresses\":{\"MOTOR\":64,\"CIRCUIT\":65},\"integrity\":\"%s\",\"hardware_control\":%s,\"fixed_pwm_percent\":%lu,\"max_duration_ms\":%lu,\"fixed_direction\":\"FORWARD\",\"heartbeat_timeout_ms\":2000,\"temperature_enabled\":%s,\"hardware_block_reason\":\"%s\",\"encoder_calibration\":\"PROVISIONAL_UNTIL_BENCH_VERIFIED\",\"operating_mode\":\"%s\",\"power_feedback_installed\":%s,\"power_feedback_state\":\"%s\",\"electrical_limits_enabled\":%s,\"motor_sensor_gating_enabled\":%s,\"power_check_mode\":\"%s\",\"protection_limits_verified\":%s,\"supply_sensing\":\"%s\",\"supply_sensing_verified\":%s,\"power_check_required\":true,\"power_check_timeout_ms\":1500,\"power_check_settle_ms\":50,\"min_voltage_mv\":%lu,\"max_voltage_mv\":%lu,\"max_current_ma\":%lu,\"station_control\":%s,\"motor_power_hold_ms\":30000,\"circuit_sensor_gating_enabled\":%s,\"circuit_power_control\":%s,\"circuit_max_duration_ms\":30000,\"circuit_relay\":\"D5/PB4/IN2\",\"motor_relay_active_level\":%d,\"circuit_relay_active_level\":%d}}}\n",
       (unsigned long)++protocol->transmit_sequence,(unsigned long)ADS_Protocol_Now(protocol),(unsigned long)reply_to,
       ADS_FIRMWARE_VERSION,protocol->require_crc?"CRC32":"OPTIONAL_CRC32",t->output_enabled?"true":"false",(unsigned long)t->fixed_pwm,(unsigned long)t->max_duration_ms,ADS_TEMPERATURE_ENABLED?"true":"false",t->disabled_reason,
       t->supervised_required?"SUPERVISED_TEST":"NORMAL",t->power_feedback_installed?"true":"false",
@@ -286,6 +288,7 @@ static void ADS_Protocol_SendCapabilities(ADS_Protocol *protocol,
       ADS_ELECTRICAL_LIMITS_ENABLED && ADS_PROTECTION_LIMITS_VERIFIED?"true":"false",
       ADS_ELECTRICAL_LIMITS_ENABLED?"DOWNSTREAM_POWER_CHECK":"TELEMETRY_ONLY","true",
       (unsigned long)ADS_MOTOR_MIN_VOLTAGE_MV,(unsigned long)ADS_MOTOR_MAX_VOLTAGE_MV,(unsigned long)ADS_MOTOR_MAX_CURRENT_MA,
+      ADS_STATION_CONTROL_ENABLED?"true":"false",ADS_CIRCUIT_SENSOR_GATING_ENABLED?"true":"false",
       protocol->circuit_test && protocol->circuit_test->output_enabled?"true":"false",
       ADS_RELAY_ACTIVE_LEVEL,ADS_CIRCUIT_RELAY_ACTIVE_LEVEL);
     if(written>0 && (size_t)written<sizeof(frame)) ADS_Protocol_Transmit(protocol,frame);
@@ -480,6 +483,26 @@ static void ADS_Protocol_CircuitResult(ADS_Protocol *p,uint32_t reply,int accept
   if(n>0 && (size_t)n<sizeof(frame)) ADS_Protocol_Transmit(p,frame);
 }
 
+static void ADS_Protocol_StationResult(ADS_Protocol *p,uint32_t reply)
+{
+  ADS_Test *m=p->motor_test,*c=p->circuit_test;
+  int available=m && c;
+  int motor_on=m && (m->power_requested || m->running);
+  int circuit_on=c && c->running;
+  int off=available && !motor_on && !circuit_on && !m->applied_pwm && !m->armed && !c->armed;
+  char frame[640];
+  int n=snprintf(frame,sizeof(frame),
+    "{\"version\":1,\"type\":\"ack\",\"seq\":%lu,\"device_id\":\"STM32-ADS\",\"timestamp_ms\":%lu,"
+    "\"payload\":{\"reply_to\":%lu,\"result\":{\"accepted\":%s,\"reason\":\"%s\","
+    "\"all_off_confirmed\":%s,\"motor_relay_requested_on\":%s,\"circuit_relay_requested_on\":%s,"
+    "\"applied_pwm_percent\":%lu,\"selected_branch\":%s,\"physical_power_verified\":false}}}\n",
+    (unsigned long)++p->transmit_sequence,(unsigned long)ADS_Protocol_Now(p),(unsigned long)reply,
+    available?"true":"false",available?"NONE":"STATION_UNAVAILABLE",off?"true":"false",
+    motor_on?"true":"false",circuit_on?"true":"false",(unsigned long)(m?m->applied_pwm:0),
+    motor_on?"\"MOTOR\"":circuit_on?"\"CIRCUIT\"":"null");
+  if(n>0 && (size_t)n<sizeof(frame)) ADS_Protocol_Transmit(p,frame);
+}
+
 static void ADS_Protocol_HandleFrame(ADS_Protocol *protocol, const char *frame)
 {
   uint32_t version = 0U;
@@ -558,6 +581,20 @@ static void ADS_Protocol_HandleFrame(ADS_Protocol *protocol, const char *frame)
     if (arguments == NULL || *arguments != '{')
     { ADS_Protocol_SendError(protocol, request_sequence, "MALFORMED_COMMAND", "Arguments must be an object"); return; }
   }
+  if (!strcmp(command,"RESET_ALL") || !strcmp(command,"GET_STATION_STATUS")) {
+    if(!strcmp(command,"RESET_ALL")) {
+      /* Stop PWM and both outputs before clearing logical run/branch state.
+       * Idempotent STOP: acted on even for old sequence numbers or lockout. */
+      if(protocol->stop) protocol->stop(protocol->callback_context);
+      if(protocol->motor_test) {
+        ADS_Test_Fault(protocol->motor_test,ADS_Protocol_Now(protocol),"RESET_ALL");
+        protocol->motor_test->requested_pwm=0;
+      }
+      if(protocol->circuit_test) ADS_Test_Fault(protocol->circuit_test,ADS_Protocol_Now(protocol),"RESET_ALL");
+      ADS_Protocol_EmitMotorEvents(protocol);
+    }
+    ADS_Protocol_StationResult(protocol,request_sequence);return;
+  }
   if (!strcmp(command,"GET_CIRCUIT_STATUS")) {
     ADS_Protocol_CircuitResult(protocol,request_sequence,1,"NONE"); return;
   }
@@ -608,7 +645,7 @@ static void ADS_Protocol_HandleFrame(ADS_Protocol *protocol, const char *frame)
       int accepted;
       int valid=1;
       protocol->motor_test->operator_confirmation=0;
-      if(!strcmp(command,"ARM_TEST") || !strcmp(command,"CLEAR_FAULTS")) {
+      if(!strcmp(command,"ARM_TEST") || !strcmp(command,"CLEAR_FAULTS") || !strcmp(command,"PREPARE_TEST_POWER")) {
         const char *confirmation=ADS_Protocol_FindValue(frame,"\"supervised_confirmed\"");
         protocol->motor_test->operator_confirmation=confirmation && !strncmp(confirmation,"true",4);
       }

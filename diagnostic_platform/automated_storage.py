@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 def utcnow(): return datetime.now(timezone.utc).isoformat()
-ACTIVE=('IDLE','PRECHECK','ARMED','RUNNING','STOPPING','ANALYZING')
+ACTIVE=('IDLE','PRECHECK','ARMED','POWER_READY','RUNNING','STOPPING','ANALYZING')
 
 def run_summary(run):
     if run is None:return None

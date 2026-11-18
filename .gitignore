@@ -98,3 +98,4 @@ dist/
 
 # Canonical firmware is ADS; keep locally recovered duplicate projects out.
 /FinalFirmware/
+/releases/

@@ -113,6 +113,11 @@ class BranchSelectionPayload(BaseModel):
     branch: Literal['MOTOR', 'CIRCUIT']
 
 
+class StationPowerPayload(BaseModel):
+    duration_ms: int = Field(default=30000, ge=100, le=30000, strict=True)
+    confirmed: bool = Field(default=False, strict=True)
+
+
 class CircuitPowerPayload(BaseModel):
     on: bool = Field(strict=True)
     duration_ms: int = Field(default=30000, ge=100, le=30000, strict=True)
