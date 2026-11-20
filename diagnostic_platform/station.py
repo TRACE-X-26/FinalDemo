@@ -82,6 +82,7 @@ class StationService:
                     'reason': 'Both relay-off commands and zero PWM acknowledged' if confirmed
                               else 'Off not confirmed by STM32',
                     'physical_power_verified': False,
+                    'outputs': reply.get('outputs') if 'RESET_ALL' in caps.get('commands',[]) else None,
                     'firmware_version': caps.get('firmware_version'),
                     'station_control': caps.get('station_control') is True,
                 }

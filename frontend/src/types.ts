@@ -252,3 +252,36 @@ export type MotorHealthReplay = {
   runs: Record<string, { test_name: string | null; status: string; target_pwm_percent: number[];
     reasons: string[]; metrics: Record<string, { median: number; min: number; max: number; samples: number }> }>;
 }
+
+export type MotorHealthMetricName = 'rpm' | 'current' | 'voltage'
+export type MotorHealthReference = {
+  id: string
+  motor_model: string
+  run_ids: string[]
+  pwm_percent: number
+  rpm_verified: boolean
+  archive_sample_count: number
+  ranges: Record<MotorHealthMetricName, [number, number]>
+}
+export type MotorHealthTest = {
+  id: string
+  number: number
+  state: string
+  created_at: string
+  duration_ms: number | null
+  pwm_percent: number | null
+  load_id: string | null
+  direction: string
+}
+export type MotorHealthComparison = {
+  run_id: string
+  number: number
+  reference: MotorHealthReference
+  metrics: Record<MotorHealthMetricName, { value: number | null; range: [number, number]; sample_count: number; outside: boolean | null }>
+  status: 'Not assessed' | 'Deviation detected' | 'Within reference'
+  findings: string[]
+  rpm_calibrated: boolean | null
+  window_ms: [number, number]
+}
+export type MotorHealthDiagnosis = MotorHealthComparison & { id: number; created_at: string }
+export type MotorHealthOverview = { reference: MotorHealthReference; tests: MotorHealthTest[]; history: MotorHealthDiagnosis[] }

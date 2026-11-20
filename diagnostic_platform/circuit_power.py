@@ -139,7 +139,7 @@ class CircuitPowerService:
                     if sensor_gating:raise RunRejected('Circuit INA219 disconnected or invalid')
                 if sensor_gating and ((connection.last_timestamp_ms - branch['timestamp_ms']) & 0xffffffff) > 1500:
                     raise RunRejected('Circuit INA219 stale')
-                self._update(measurements=branch)
+                self._update(measurements=branch,outputs=status.get('outputs'))
                 with self.engine.store.connect() as db:
                     db.execute('INSERT INTO branch_power_samples(session_id,received_at,record_json) VALUES(?,?,?)',
                                (self.current['id'], utcnow(), json.dumps(branch, allow_nan=False)))

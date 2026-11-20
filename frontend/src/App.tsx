@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import LiveSensors from './LiveSensors'
+import MotorHealth from './MotorHealth'
 import TestStation from './TestStation'
 
-type Page = 'station' | 'sensors'
+type Page = 'station' | 'sensors' | 'motor-health'
 const NAV: { key: Page; label: string }[] = [
   { key: 'station', label: 'Test Station' },
   { key: 'sensors', label: 'STM32 Sensors' },
+  { key: 'motor-health', label: 'Motor Health' },
 ]
 
 export default function App() {
@@ -42,7 +44,7 @@ export default function App() {
     <aside>
       <div className="brand">
         <div className="brand-mark">A</div>
-        <div><strong>TRACE-X</strong><span>Diagnostic station · v0.9.0</span></div>
+        <div><strong>TRACE-X</strong><span>Diagnostic station · v0.9.1</span></div>
       </div>
       <nav aria-label="Main navigation">
         {NAV.map(item => <button key={item.key}
@@ -59,12 +61,14 @@ export default function App() {
     </aside>
     <main>
       <div className="source-banner" role="status">
-        <strong>{page === 'station' ? 'TEST STATION' : 'STM32 SENSORS'}</strong>
+        <strong>{NAV.find(item => item.key === page)?.label.toUpperCase()}</strong>
         <span>{online ? 'Backend connected' : 'Backend unavailable'}</span>
         <button className="danger" disabled={resetPending} onClick={reset}>{resetPending ? 'Resetting…' : 'Reset / All Off'}</button>
       </div>
       {resetMessage && <p role="status">{resetMessage}</p>}
-      {page === 'station' ? <TestStation onPowerRequested={() => setResetMessage('')}/> : <LiveSensors/>}
+      {page === 'station' && <TestStation onPowerRequested={() => setResetMessage('')}/>}
+      {page === 'sensors' && <LiveSensors/>}
+      {page === 'motor-health' && <MotorHealth/>}
     </main>
   </div>
 }

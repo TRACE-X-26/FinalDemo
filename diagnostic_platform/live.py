@@ -379,8 +379,17 @@ class LiveMonitor:
             self._connected=result is not None
         if result is not None:
             result={**result,'_stm32_timestamp_ms':result.get('_stm32_timestamp_ms',result.get('stm32_status_timestamp_ms'))}
-            self.feed(json.dumps(dict(version=1,type='measurement',seq=result.get('sample_sequence',0),
-                device_id='STM32-ADS',timestamp_ms=result.get('_stm32_timestamp_ms') or 0,payload={'result':result})))
+            # The serial owner already validated the wire frame. Run records can
+            # also contain a copy of that frame and exceed the wire size limit.
+            try:
+                self._feed_ads_measurements(result, datetime.now(timezone.utc).isoformat(), time.monotonic())
+            except (ValueError, TypeError):
+                with self._lock:
+                    self._invalidate_motor()
+                    self._text_motor.reset()
+                    self._ina219.clear()
+                    self._probe = {}
+                    self._warnings = ['INVALID_JSON_FRAME']
 
     def snapshot(self):
         with self._lock:

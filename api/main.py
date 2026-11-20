@@ -27,6 +27,7 @@ from diagnostic_platform.circuits import CircuitDiagnosticService
 from diagnostic_platform.measurements import DataSource, motor_measurement_envelopes
 from diagnostic_platform.models import MotorProfile
 from diagnostic_platform.motor_health import load_json
+from diagnostic_platform.motor_health_dashboard import REFERENCE as MOTOR_HEALTH_REFERENCE, compare_motor_test, motor_test_summary
 from diagnostic_platform.multimeter import SimulatedMultimeter
 from diagnostic_platform.sources import SimulatedMotorSource
 from diagnostic_platform.storage import DiagnosticStore
@@ -158,7 +159,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Adaptive Diagnostic System API",
-    version="0.9.0",
+    version="0.9.1",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -625,7 +626,7 @@ def station_status():
     return {'selected_branch':engine.circuit_power.selected_branch,
             'circuit':engine.circuit_power.snapshot(), 'motor':engine.snapshot(),
             'hardware_runtime_enabled':engine.hardware_runtime.enabled,
-            'dashboard_version':'0.9.0', 'reset':engine.station.snapshot()}
+            'dashboard_version':'0.9.1', 'reset':engine.station.snapshot()}
 
 @app.post('/api/station/select')
 def station_select(payload: BranchSelectionPayload):
@@ -723,6 +724,32 @@ def automated_runs():return test_engine().store.list()
 def automated_run(run_id: str):
     try:return test_engine().store.get(run_id)
     except KeyError as exc:raise HTTPException(status_code=404,detail='Run not found') from exc
+
+@app.get('/api/motor/health')
+def motor_health():
+    store = test_engine().store
+    return {'reference': MOTOR_HEALTH_REFERENCE,
+            'tests': [motor_test_summary(number, run) for number, run in store.motor_health_runs()],
+            'history': store.motor_diagnostics()}
+
+@app.get('/api/motor/health/tests/{run_id}')
+def motor_health_test(run_id: str):
+    try:
+        number, run = test_engine().store.motor_health_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail='Motor test not found') from exc
+    return compare_motor_test(number, run)
+
+@app.post('/api/motor/health/tests/{run_id}/diagnostics', status_code=201)
+def motor_health_diagnostic(run_id: str):
+    store = test_engine().store
+    try:
+        number, run = store.motor_health_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail='Motor test not found') from exc
+    if run['state'] not in TERMINAL:
+        raise HTTPException(status_code=409, detail='Wait for the motor test to finish')
+    return store.save_motor_diagnostic(run_id, compare_motor_test(number, run))
 
 @app.post('/api/automated/runs/{run_id}/stop')
 def stop_automated_run(run_id: str,emergency: bool=False):

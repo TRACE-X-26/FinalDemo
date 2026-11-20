@@ -340,6 +340,7 @@ class AutomatedTestEngine:
             run['power_feedback_state']=status.get('power_feedback_state','NOT_REPORTED')
             run['measured_pwm_percent']=None
             run['motor_relay_requested_on']=status.get('motor_relay_requested_on')
+            run['outputs']=status.get('outputs')
         for name,item in channels.items():
             if name not in required_channels:continue
             if ((received_tick-item['timestamp_ms'])&0xffffffff)>1500:quality.append('STALE_'+name.upper())
@@ -556,6 +557,7 @@ class AutomatedTestEngine:
                     run['stop_confirmed']=self._stopped(result)
                     if run['stop_confirmed']:
                         run['applied_pwm_percent']=0;run['device_state']=result.get('state','STOPPED')
+                        run['outputs']=result.get('outputs')
                 except Exception as exc:run['stop_error']=str(exc);run['stop_confirmed']=False
                 try:connection.disconnect()
                 except Exception as exc:run['disconnect_error']=str(exc)

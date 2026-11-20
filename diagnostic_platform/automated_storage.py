@@ -33,10 +33,21 @@ class RunStore:
             CREATE TABLE IF NOT EXISTS branch_power_sessions(id TEXT PRIMARY KEY, record_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS branch_power_samples(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES branch_power_sessions(id), received_at TEXT NOT NULL, record_json TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS automated_samples_run ON automated_samples(run_id,id);
+            CREATE TABLE IF NOT EXISTS motor_test_numbers(
+              number INTEGER PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES automated_runs(id));
+            CREATE TABLE IF NOT EXISTS motor_diagnostic_history(
+              id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automated_runs(id),
+              created_at TEXT NOT NULL, result_json TEXT NOT NULL);
             ''')
             db.execute('INSERT OR IGNORE INTO schema_migrations VALUES(1,?)',(utcnow(),))
             db.execute('INSERT OR IGNORE INTO schema_migrations VALUES(2,?)',(utcnow(),))
             db.execute('INSERT OR IGNORE INTO schema_migrations VALUES(3,?)',(utcnow(),))
+            db.execute('''INSERT INTO motor_test_numbers(run_id)
+                SELECT id FROM automated_runs
+                WHERE mode='hardware' AND json_extract(record_json,'$.source')='stm32_serial'
+                AND NOT EXISTS (SELECT 1 FROM motor_test_numbers WHERE run_id=automated_runs.id)
+                ORDER BY created_at,id''')
+            db.execute('INSERT OR IGNORE INTO schema_migrations VALUES(4,?)',(utcnow(),))
     @contextmanager
     def connect(self):
         db=sqlite3.connect(self.path,timeout=5)
@@ -68,6 +79,8 @@ class RunStore:
             except sqlite3.IntegrityError as exc: raise RuntimeError('Another automated run owns the device') from exc
             db.execute('INSERT INTO automated_runs VALUES(?,?,?,?,?,?)',
                        (run['id'],run['state'],run['mode'],run['created_at'],utcnow(),json.dumps(run,allow_nan=False)))
+            if run['mode']=='hardware' and run.get('source')=='stm32_serial':
+                db.execute('INSERT INTO motor_test_numbers(run_id) VALUES(?)',(run['id'],))
     def save(self,run):
         with self.connect() as db:
             db.execute('UPDATE automated_runs SET state=?,updated_at=?,record_json=? WHERE id=?',
@@ -97,6 +110,31 @@ class RunStore:
     def list(self):
         with self.connect() as db:
             return [json.loads(r[0]) for r in db.execute('SELECT record_json FROM automated_runs ORDER BY created_at DESC LIMIT 200')]
+
+    def motor_health_runs(self):
+        with self.connect() as db:
+            return [(row['number'], json.loads(row['record_json'])) for row in db.execute('''
+                SELECT number, record_json FROM motor_test_numbers
+                JOIN automated_runs ON automated_runs.id=motor_test_numbers.run_id
+                ORDER BY number DESC''')]
+
+    def motor_health_run(self, run_id):
+        with self.connect() as db:
+            row=db.execute('SELECT number FROM motor_test_numbers WHERE run_id=?',(run_id,)).fetchone()
+        if row is None: raise KeyError(run_id)
+        return row['number'], self.get(run_id)
+
+    def save_motor_diagnostic(self, run_id, result):
+        created_at=utcnow()
+        with self.connect() as db:
+            cursor=db.execute('INSERT INTO motor_diagnostic_history(run_id,created_at,result_json) VALUES(?,?,?)',
+                              (run_id,created_at,json.dumps(result,allow_nan=False)))
+            return {**result,'id':cursor.lastrowid,'created_at':created_at}
+
+    def motor_diagnostics(self):
+        with self.connect() as db:
+            return [{**json.loads(row['result_json']),'id':row['id'],'created_at':row['created_at']}
+                    for row in db.execute('SELECT * FROM motor_diagnostic_history ORDER BY id DESC')]
 
     def create_simulated_circuit(self,report):
         from uuid import uuid4

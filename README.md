@@ -1,13 +1,15 @@
-# TRACE-X FinalDemo — 0.9.0
+# TRACE-X FinalDemo — Dashboard 0.9.1
 
 TRACE-X uses an STM32 Nucleo-F401RE for motor control and measurements, with a
 Python FastAPI backend and React dashboard on a Raspberry Pi 5 or development Mac.
 
-The dashboard has two navigation items:
+The dashboard has three navigation items:
 
 - **Test Station** — select Motor or Circuit, issue explicit power/test commands,
   and view readings from the two INA219 sensors and the circuit probe.
 - **STM32 Sensors** — monitor live STM32 measurements and connection status.
+- **Motor Health** — review numbered motor tests, compare saved readings against the provisional T08-01/T08-02 reference, and reopen diagnoses from SQLite history.
+  The comparison uses seconds 3–13. A 15-second test gives that window time to complete. Archived RPM scaling is unverified.
 
 ## Matching firmware and motor behavior
 
@@ -15,7 +17,7 @@ The only active firmware project is **`ADS/`**. Firmware identity:
 **`0.9.0-branch-control`**, using ADS JSON v1 with CRC32 at 115200 baud.
 
 Select Motor or Circuit, confirm its power, then use a separate Start Motor Test
-for motor motion. **Reset / All Off** is available on both dashboard pages and
+for motor motion. **Reset / All Off** is available across the dashboard and
 clears selection while requesting both branches off. Failed communication
 shows **Off not confirmed**. Motor power-ready standby expires after 30 seconds.
 
@@ -42,7 +44,7 @@ Use Python 3.11 or newer and a Node version compatible with the locked Vite 7
 frontend (Node 22.12+ or a supported newer release).
 
 ```sh
-git clone --branch release/0.9.0 https://github.com/TRACE-X-26/FinalDemo.git
+git clone --branch main https://github.com/TRACE-X-26/FinalDemo.git
 cd FinalDemo
 python3 -m venv .venv
 source .venv/bin/activate
@@ -63,7 +65,7 @@ substitute simulated values for missing hardware readings.
 The repository also includes the prebuilt dashboard. To use it, skip the frontend build and launch from the repository root after installing Python dependencies.
 
 ```sh
-ADS_SERVE_DASHBOARD=1 ADS_DASHBOARD_DIST=releases/dashboard-0.9.0-dist \
+ADS_SERVE_DASHBOARD=1 ADS_DASHBOARD_DIST=releases/dashboard-0.9.1-dist \
   python -m uvicorn api.main:app --host 127.0.0.1 --port 13115
 ```
 
